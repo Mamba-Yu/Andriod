@@ -191,10 +191,14 @@ app_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-//      gst_parse_launch ("videotestsrc ! warptv ! videoconvert ! autovideosink", &error);
+//      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! qtdemux ! h264parse ! tee name=t \
+//                        t.! queue ! avdec_h264! videoconvert ! autovideosink \
+//                        t.! queue !  rtph264pay config-interval=1 pt=96 ! udpsink host=172.24.16.106 port=5004 ", &error);
+
       gst_parse_launch("videotestsrc ! warptv ! videoconvert ! tee name=t \
             t.! queue ! autovideosink \
-            t.! queue !  video/x-raw,format=I420 ! openh264enc usage-type=camera complexity=high bitrate=10000000 ! rtph264pay config-interval=3 ssrc=32355 ! queue ! udpsink host=172.24.16.106 port=5004", &error);
+            t.! queue ! video/x-raw,format=I420 ! openh264enc usage-type=camera complexity=high ! rtph264pay config-interval=1 pt=96 ssrc=32355 ! queue ! udpsink host=172.24.16.106 port=5004", &error);
+
   if (error) {
     gchar *message =
         g_strdup_printf ("Unable to build pipeline: %s", error->message);

@@ -16,11 +16,6 @@ import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.InputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-
 import org.freedesktop.gstreamer.GStreamer;
 
 public class Tutorial3 extends Activity implements SurfaceHolder.Callback {
@@ -55,27 +50,12 @@ public class Tutorial3 extends Activity implements SurfaceHolder.Callback {
 
         setContentView(R.layout.main);
 
-        if (hasCameraPermission()) {
-          // 已经获得Camera权限，可以执行相关操作
-        } else {
-          requestCameraPermission();
+        if (!hasCameraPermission()) {
+            requestCameraPermission();
         }
         // 获得读取文件权限
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, FILE_PERMISSION_REQUEST_CODE);
-        }
-
-        InputStream videoInputStream = getResources().openRawResource(R.raw.video);
-        File outputFile = new File(getFilesDir(), "video.mp4");
-
-        try (FileOutputStream outputStream = new FileOutputStream(outputFile)) {
-            byte[] buffer = new byte[1024];
-            int length;
-            while ((length = videoInputStream.read(buffer)) > 0) {
-                outputStream.write(buffer, 0, length);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
 
         ImageButton play = (ImageButton) this.findViewById(R.id.button_play);
@@ -143,7 +123,6 @@ public class Tutorial3 extends Activity implements SurfaceHolder.Callback {
         }
       }
     }
-
 
     // Called from native code. This sets the content of the TextView from the UI thread.
     private void setMessage(final String message) {

@@ -368,20 +368,16 @@ static void
 gst_native_init (JNIEnv * env, jobject thiz)
 {
   CustomData *send_data = g_new0 (CustomData, 1);
-//  CustomData *recv_data = g_new0 (CustomData, 1);
   SET_CUSTOM_DATA (env, thiz, custom_data_field_id, send_data);
-//  SET_CUSTOM_DATA (env, thiz, custom_data_field_id, recv_data);
   GST_DEBUG_CATEGORY_INIT (debug_category, "tutorial-3", 0, "Android tutorial 3");
 
   gst_debug_set_threshold_for_name ("tutorial-3", GST_LEVEL_DEBUG);
 
   GST_DEBUG ("Created CustomData at %p", send_data);
   send_data->app = (*env)->NewGlobalRef (env, thiz);
-//  recv_data->app = (*env)->NewGlobalRef (env, thiz);
   GST_DEBUG ("Created GlobalRef for app object at %p ", send_data->app);
 
   pthread_create (&gst_app_send_thread, NULL, &app_send_function, send_data);
-//  pthread_create (&gst_app_recv_thread, NULL, &app_recv_function, recv_data);
 }
 
 /* Quit the main loop, remove the native thread and free resources */
@@ -395,7 +391,6 @@ gst_native_finalize (JNIEnv * env, jobject thiz)
   g_main_loop_quit (data->main_loop);
   GST_DEBUG ("Waiting for thread to finish...");
   pthread_join (gst_app_send_thread, NULL);
-//  pthread_join (gst_app_recv_thread, NULL);
 
   GST_DEBUG ("Deleting GlobalRef for app object at %p", data->app);
   (*env)->DeleteGlobalRef (env, data->app);

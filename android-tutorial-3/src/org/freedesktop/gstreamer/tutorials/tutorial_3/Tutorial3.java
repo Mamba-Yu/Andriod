@@ -171,19 +171,18 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
         CameraSelector cameraSelector =
                 new CameraSelector.Builder().requireLensFacing(CameraSelector.LENS_FACING_BACK).build();
         // 16:9 aspect ratio
-        Preview preview = new Preview.Builder().setTargetAspectRatio(AspectRatio.RATIO_16_9).build();
+        Preview preview = new Preview.Builder().build();
 
         // Display the preview on previewView
         preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
         // Refresh the screen continuously while analyzing is ongoing. When analysis is done, analyze the latest photo again.
-        ImageAnalysis analysis = new ImageAnalysis.Builder().setTargetAspectRatio(AspectRatio.RATIO_16_9)
+        ImageAnalysis analysis = new ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
 
         analysis.setAnalyzer(Executors.newSingleThreadExecutor(), imageProxy -> {
             try {
                 Bitmap bitmap = imageProxy.toBitmap();
-
                 // 将 Bitmap 转换为字节流，以便 GStreamer 可以使用
                 ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream);

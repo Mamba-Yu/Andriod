@@ -6,6 +6,7 @@
 #include <android/native_window_jni.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
+#include <gst/app/gstappsrc.h>
 #include <pthread.h>
 
 GST_DEBUG_CATEGORY_STATIC (debug_category);
@@ -32,6 +33,7 @@ typedef struct _CustomData
   GMainLoop *main_loop;         /* GLib main loop */
   gboolean initialized;         /* To avoid informing the UI multiple times about the initialization */
   GstElement *video_sink;       /* The video sink element which receives XOverlay commands */
+  GstElement *appsrc;
   ANativeWindow *native_window; /* The Android native window where video will be rendered */
 } CustomData;
 
@@ -192,10 +194,14 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! \
-                        qtdemux ! h264parse ! tee name=t \
-                        t.! queue ! avdec_h264! videoconvert ! autovideosink \
-                        t.! queue ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004 ", &error);
+          gst_parse_launch("appsrc name=appsrc ! jpegparse ! tee name=t \
+                            t.! queue ! jpegdec ! videoconvert ! autovideosink \
+                            t.! queue ! rtpjpegpay ! udpsink host=172.24.16.106 port=5004 ", &error);
+
+//      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! \
+//                        qtdemux ! h264parse ! tee name=t \
+//                        t.! queue ! avdec_h264! videoconvert ! autovideosink \
+//                        t.! queue ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004 ", &error);
 
 //      gst_parse_launch("videotestsrc ! warptv ! videoconvert ! tee name=t \
 //            t.! queue ! autovideosink \
@@ -214,13 +220,17 @@ app_send_function (void *userdata)
   /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
   gst_element_set_state (data->pipeline, GST_STATE_READY);
 
-  data->video_sink =
-      gst_bin_get_by_interface (GST_BIN (data->pipeline),
-      GST_TYPE_VIDEO_OVERLAY);
+  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
   if (!data->video_sink) {
     GST_ERROR ("Could not retrieve video sink");
     return NULL;
   }
+
+    data->appsrc = gst_bin_get_by_name (GST_BIN (data->pipeline), "appsrc" );
+    if (!data->appsrc) {
+        GST_ERROR ("Could not retrieve appsrc element");
+        return NULL;
+    }
 
   /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
   bus = gst_element_get_bus (data->pipeline);
@@ -249,114 +259,10 @@ app_send_function (void *userdata)
   g_main_context_unref (data->context);
   gst_element_set_state (data->pipeline, GST_STATE_NULL);
   gst_object_unref (data->video_sink);
+  gst_object_unref (data->appsrc);
   gst_object_unref (data->pipeline);
 
   return NULL;
-}
-
-static void *
-app_recv_function (void *userdata)
-{
-    JavaVMAttachArgs args;
-    GstBus *bus;
-    CustomData *data = (CustomData *) userdata;
-    GSource *bus_source;
-    GError *error = NULL;
-
-    GST_DEBUG ("Creating pipeline in CustomData at %p", data);
-
-    /* Create our own GLib Main Context and make it the default one */
-    data->context = g_main_context_new ();
-    g_main_context_push_thread_default (data->context);
-
-    /* Build pipeline */
-    data->pipeline = gst_parse_launch(
-            "udpsrc address=127.0.0.1 port=5004 caps=\"application/x-rtp, media=video, encoding-name=H264, payload=96\" ! "
-            "rtpulpfecdec ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! jpegenc ! "
-            "multifilesink location=\"/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/output_%05d.jpg\"", &error);
-    if (error) {
-        gchar *message =
-                g_strdup_printf ("Unable to build pipeline: %s", error->message);
-        g_clear_error (&error);
-        set_ui_message (message, data);
-        g_free (message);
-        return NULL;
-    }
-
-    /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
-    gst_element_set_state (data->pipeline, GST_STATE_READY);
-
-    /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
-    bus = gst_element_get_bus (data->pipeline);
-    bus_source = gst_bus_create_watch (bus);
-    g_source_set_callback (bus_source, (GSourceFunc) gst_bus_async_signal_func,
-                           NULL, NULL);
-    g_source_attach (bus_source, data->context);
-    g_source_unref (bus_source);
-    g_signal_connect (G_OBJECT (bus), "message::error", (GCallback) error_cb,
-                      data);
-    g_signal_connect (G_OBJECT (bus), "message::state-changed",
-                      (GCallback) state_changed_cb, data);
-    gst_object_unref (bus);
-
-    /* Create a GLib Main Loop and set it to run */
-    GST_DEBUG ("Entering main loop... (CustomData:%p)", data);
-    data->main_loop = g_main_loop_new (data->context, FALSE);
-    check_initialization_complete (data);
-    g_main_loop_run (data->main_loop);
-    GST_DEBUG ("Exited main loop");
-    g_main_loop_unref (data->main_loop);
-    data->main_loop = NULL;
-
-    /* Free resources */
-    g_main_context_pop_thread_default (data->context);
-    g_main_context_unref (data->context);
-    gst_element_set_state (data->pipeline, GST_STATE_NULL);
-    gst_object_unref (data->video_sink);
-    gst_object_unref (data->pipeline);
-
-    return NULL;
-}
-
-void print_element_info(GstElement *element) {
-    GstPad *pad;
-    GstCaps *caps;
-    gchar *caps_str;
-    GstIterator *it;
-    GValue value = G_VALUE_INIT;
-    GstPad *pad_item;
-
-    // 打印元素名称
-    g_print("Element name: %s\n", GST_ELEMENT_NAME(element));
-
-    // 打印所有 Pad 的信息
-    g_print("Pads:\n");
-    GList *pads = gst_element_get_pad_template_list(element);
-
-    for (GList *l = pads; l; l = l->next) {
-        pad = (GstPad *)l->data;
-        g_print("  Pad name: %s\n", GST_PAD_NAME(pad));
-
-        // 获取并打印 Pad 的 Caps
-        caps = gst_pad_query_caps(pad, NULL);
-        caps_str = gst_caps_to_string(caps);
-        g_print("    Caps: %s\n", caps_str);
-        g_free(caps_str);
-        gst_caps_unref(caps);
-    }
-    g_list_free(pads);
-
-    // 打印属性信息
-    g_print("Properties:\n");
-    GParamSpec **params;
-    guint n_params, i;
-    params = g_object_class_list_properties(G_OBJECT_GET_CLASS(element), &n_params);
-    for (i = 0; i < n_params; i++) {
-        GParamSpec *pspec = params[i];
-        g_print("  Property: %s (type: %s)\n", pspec->name,
-                g_type_name(pspec->value_type));
-    }
-    g_free(params);
 }
 
 /*
@@ -372,6 +278,7 @@ gst_native_init (JNIEnv * env, jobject thiz)
   GST_DEBUG_CATEGORY_INIT (debug_category, "tutorial-3", 0, "Android tutorial 3");
 
   gst_debug_set_threshold_for_name ("tutorial-3", GST_LEVEL_DEBUG);
+  gst_debug_set_default_threshold(GST_LEVEL_DEBUG);
 
   GST_DEBUG ("Created CustomData at %p", send_data);
   send_data->app = (*env)->NewGlobalRef (env, thiz);
@@ -494,6 +401,40 @@ gst_native_surface_finalize (JNIEnv * env, jobject thiz)
   data->initialized = FALSE;
 }
 
+static void
+gst_native_appsrc_data (JNIEnv * env, jobject thiz, jbyteArray imageData)
+{
+    CustomData *data = GET_CUSTOM_DATA (env, thiz, custom_data_field_id);
+    if (!data)
+        return;
+
+    GST_DEBUG ("gst_native_appsrc_data, appsrc: %p", data->appsrc);
+
+    if (data->appsrc) {
+        jsize length = (*env)->GetArrayLength(env, imageData);
+
+        GST_DEBUG ("Push image buffer to appsrc, len: %d", length);
+
+        // 从Java获取byte[]数据
+        jbyte *nativeData = (*env)->GetByteArrayElements(env, imageData, NULL);
+
+        // 创建GstBuffer并填充数据
+        GstBuffer *buffer = gst_buffer_new_allocate(NULL, length, NULL);
+        GstMapInfo map;
+        gst_buffer_map(buffer, &map, GST_MAP_WRITE);
+        memcpy(map.data, nativeData, length);
+        gst_buffer_unmap(buffer, &map);
+
+        GstFlowReturn ret = gst_app_src_push_buffer(GST_APP_SRC(data->appsrc), buffer);
+        if (ret != GST_FLOW_OK) {
+            g_print("Error pushing buffer to appsrc\n");
+        }
+
+        // 释放Java byte[]数组
+        (*env)->ReleaseByteArrayElements(env, imageData, nativeData, 0);
+    }
+}
+
 /* List of implemented native methods */
 static JNINativeMethod native_methods[] = {
   {"nativeInit", "()V", (void *) gst_native_init},
@@ -503,7 +444,8 @@ static JNINativeMethod native_methods[] = {
   {"nativeSurfaceInit", "(Ljava/lang/Object;)V",
       (void *) gst_native_surface_init},
   {"nativeSurfaceFinalize", "()V", (void *) gst_native_surface_finalize},
-  {"nativeClassInit", "()Z", (void *) gst_native_class_init}
+  {"nativeClassInit", "()Z", (void *) gst_native_class_init},
+  {"nativeAppsrcData", "([B)V", (void *) gst_native_appsrc_data}
 };
 
 /* Library initializer */

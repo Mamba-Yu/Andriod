@@ -194,7 +194,7 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-          gst_parse_launch("appsrc name=appsrc ! jpegparse ! tee name=t \
+          gst_parse_launch("appsrc name=appsrc ! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! jpegparse ! tee name=t \
                             t.! queue ! jpegdec ! videoconvert ! autovideosink \
                             t.! queue ! rtpjpegpay ! udpsink host=172.24.16.106 port=5004 ", &error);
 

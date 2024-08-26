@@ -3,6 +3,7 @@ package org.freedesktop.gstreamer.tutorials.tutorial_3;
 import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
+import android.graphics.Matrix;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceHolder;
@@ -91,7 +92,7 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
             public void onClick(View v) {
                 is_playing_desired = true;
                 nativePlay();
-                setCamera();
+                startCamera();
             }
         });
 
@@ -153,7 +154,7 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
       }
     }
 
-    private void setCamera() {
+    private void startCamera() {
         // Camera provider
         ProcessCameraProvider processCameraProvider = null;
         try {
@@ -182,10 +183,14 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
         analysis.setAnalyzer(Executors.newSingleThreadExecutor(), imageProxy -> {
             try {
+                Matrix matrix = new Matrix();
+                matrix.postRotate(90);
                 Bitmap bitmap = imageProxy.toBitmap();
+                Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+
                 // 将 Bitmap 转换为字节流，以便 GStreamer 可以使用
                 ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream);
+                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream);
                 byte[] imageData = byteStream.toByteArray();
 
                 nativeAppsrcData(imageData);

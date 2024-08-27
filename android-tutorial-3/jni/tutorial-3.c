@@ -194,17 +194,15 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-//          gst_parse_launch("appsrc name=appsrc ! \
-//                            queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=1000000000 ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
-//                            videoconvert ! autovideosink", &error);
-//            gst_parse_launch("appsrc name=appsrc ! \
-//                    queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=1000000000 ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+                            videoconvert ! autovideosink", &error);
+
+//            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
 //                    videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
 
-      gst_parse_launch("appsrc name=appsrc ! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=1000000000 ! \
-            videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
-            t.! queue ! autovideosink \
-            t.! queue ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
+//      gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
+//            t.! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! autovideosink \
+//            t.! queue ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
 
 //      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! \
 //                        qtdemux ! h264parse ! tee name=t \
@@ -225,6 +223,7 @@ app_send_function (void *userdata)
     return NULL;
   }
 
+  gst_pipeline_set_latency(GST_PIPELINE(data->pipeline), 20000000);
   /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
   gst_element_set_state (data->pipeline, GST_STATE_READY);
 

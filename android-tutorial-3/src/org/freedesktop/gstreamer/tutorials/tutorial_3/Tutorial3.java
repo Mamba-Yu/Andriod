@@ -188,11 +188,12 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
                 Bitmap bitmap = imageProxy.toBitmap();
                 Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
 
-                // 将 Bitmap 转换为字节流，以便 GStreamer 可以使用
-                ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream);
-                byte[] imageData = byteStream.toByteArray();
+                // 将 Bitmap 转换为原始视频帧YUV字节流，以便 GStreamer 可以使用
+//                ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+//                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream);
+//                byte[] imageData = byteStream.toByteArray();
 
+                byte[] imageData = bitmapToYUV(rotatedBitmap);
                 nativeAppsrcData(imageData);
 
             } catch (Exception e) {
@@ -203,6 +204,41 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
         // Bind the camera's lifecycle to the main activity
         processCameraProvider.bindToLifecycle(this, cameraSelector, preview, analysis);
+    }
+
+    private byte[] bitmapToYUV(Bitmap bitmap) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int[] argb = new int[width * height];
+        bitmap.getPixels(argb, 0, width, 0, 0, width, height);
+
+        byte[] yuv = new byte[width * height * 3 / 2];
+        int frameSize = width * height;
+        int yIndex = 0;
+        int uIndex = frameSize;
+        int vIndex = frameSize + frameSize / 4;
+
+        int a, R, G, B, Y, U, V;
+        for (int j = 0; j < height; j++) {
+            for (int i = 0; i < width; i++) {
+                a = (argb[j * width + i] & 0xff000000) >> 24;
+                R = (argb[j * width + i] & 0xff0000) >> 16;
+                G = (argb[j * width + i] & 0xff00) >> 8;
+                B = (argb[j * width + i] & 0xff);
+
+                Y = ((66 * R + 129 * G + 25 * B + 128) >> 8) + 16;
+                U = ((-38 * R - 74 * G + 112 * B + 128) >> 8) + 128;
+                V = ((112 * R - 94 * G - 18 * B + 128) >> 8) + 128;
+
+                yuv[yIndex++] = (byte) ((Y < 0) ? 0 : ((Y > 255) ? 255 : Y));
+                if (j % 2 == 0 && i % 2 == 0) {
+                    yuv[uIndex++] = (byte) ((U < 0) ? 0 : ((U > 255) ? 255 : U));
+                    yuv[vIndex++] = (byte) ((V < 0) ? 0 : ((V > 255) ? 255 : V));
+                }
+            }
+        }
+
+        return yuv;
     }
 
 

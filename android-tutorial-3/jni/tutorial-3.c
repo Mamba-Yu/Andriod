@@ -194,15 +194,17 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-          gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/222.jpg ! \
-                        queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! jpegparse ! tee name=t \
-                            t.! queue ! jpegdec ! videoconvert ! autovideosink \
-                            t.! queue ! rtpjpegpay ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004 ", &error);
+//          gst_parse_launch("appsrc name=appsrc ! \
+//                            queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=1000000000 ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+//                            videoconvert ! autovideosink", &error);
+//            gst_parse_launch("appsrc name=appsrc ! \
+//                    queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=1000000000 ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+//                    videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
 
-//          gst_parse_launch("appsrc name=appsrc caps=\"image/jpeg,framerate=(fraction)30/1\" ! \
-//                            queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! jpegparse ! tee name=t \
-//                            t.! queue ! jpegdec ! videoconvert ! autovideosink \
-//                            t.! queue ! rtpjpegpay ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004 ", &error);
+      gst_parse_launch("appsrc name=appsrc ! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=1000000000 ! \
+            videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
+            t.! queue ! autovideosink \
+            t.! queue ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
 
 //      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! \
 //                        qtdemux ! h264parse ! tee name=t \

@@ -8,6 +8,8 @@
 #include <gst/video/video.h>
 #include <gst/app/gstappsrc.h>
 #include <pthread.h>
+#include <glib.h>
+#include <time.h>
 
 GST_DEBUG_CATEGORY_STATIC (debug_category);
 #define GST_CAT_DEFAULT debug_category
@@ -126,6 +128,20 @@ error_cb (GstBus * bus, GstMessage * msg, CustomData * data)
   gst_element_set_state (data->pipeline, GST_STATE_NULL);
 }
 
+static GstPadProbeReturn probe_callback(GstPad *pad, GstPadProbeInfo *info, gpointer user_data) {
+    static gint64 last_time;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    gint64 current_time = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+
+    if (last_time != 0) {
+        g_print("Frame processing time 1: %ld ms\n", last_time);
+    }
+    last_time = current_time;
+
+    return GST_PAD_PROBE_OK;
+}
+
 /* Notify UI about pipeline state changes */
 static void
 state_changed_cb (GstBus * bus, GstMessage * msg, CustomData * data)
@@ -194,11 +210,11 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
-                            videoconvert ! autovideosink", &error);
+//          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+//                            videoconvert ! autovideosink", &error);
 
-//            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
-//                    videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
+            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+                    videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
 
 //      gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
 //            t.! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! autovideosink \
@@ -223,21 +239,26 @@ app_send_function (void *userdata)
     return NULL;
   }
 
-  gst_pipeline_set_latency(GST_PIPELINE(data->pipeline), 20000000);
+  gst_pipeline_set_latency(GST_PIPELINE(data->pipeline), 10000000);
   /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
   gst_element_set_state (data->pipeline, GST_STATE_READY);
 
-  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
-  if (!data->video_sink) {
-    GST_ERROR ("Could not retrieve video sink");
-    return NULL;
-  }
+//  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
+//  if (!data->video_sink) {
+//    GST_ERROR ("Could not retrieve video sink");
+//    return NULL;
+//  }
 
     data->appsrc = gst_bin_get_by_name (GST_BIN (data->pipeline), "appsrc" );
     if (!data->appsrc) {
         GST_ERROR ("Could not retrieve appsrc element");
         return NULL;
     }
+
+    // 在 src_pad 上安装 probe 回调
+//    GstPad *src_pad = gst_element_get_static_pad(data->appsrc, "src");
+//    gst_pad_add_probe(src_pad, GST_PAD_PROBE_TYPE_BUFFER, probe_callback, NULL, NULL);
+//    gst_object_unref(src_pad);
 
   /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
   bus = gst_element_get_bus (data->pipeline);

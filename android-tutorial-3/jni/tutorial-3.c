@@ -215,7 +215,7 @@ app_send_function (void *userdata)
 
             gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! "
                              "videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! "
-                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040", &error);
+                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
 
 //      gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
 //            t.! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! autovideosink \

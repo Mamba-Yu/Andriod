@@ -188,10 +188,6 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
                 Bitmap bitmap = imageProxy.toBitmap();
                 Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
 
-//                ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
-//                rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteStream);
-//                byte[] imageData = byteStream.toByteArray();
-
                 // 将 Bitmap 转换为原始视频帧YUV字节流，以便 GStreamer 可以使用
                 byte[] imageData = bitmapToYUV(rotatedBitmap);
                 nativeAppsrcData(imageData);

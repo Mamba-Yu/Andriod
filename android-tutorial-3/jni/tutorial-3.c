@@ -210,12 +210,12 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-//          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
-//                            videoconvert ! autovideosink", &error);
+          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+                            videoconvert ! x264enc ! queue ! h264parse ! avdec_h264 ! videoconvert ! autovideosink", &error);
 
-            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! "
-                             "videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! "
-                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
+//            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! "
+//                             "videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! "
+//                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
 
 //      gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
 //            t.! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! autovideosink \
@@ -244,11 +244,11 @@ app_send_function (void *userdata)
   /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
   gst_element_set_state (data->pipeline, GST_STATE_READY);
 
-//  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
-//  if (!data->video_sink) {
-//    GST_ERROR ("Could not retrieve video sink");
-//    return NULL;
-//  }
+  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
+  if (!data->video_sink) {
+    GST_ERROR ("Could not retrieve video sink");
+    return NULL;
+  }
 
     data->appsrc = gst_bin_get_by_name (GST_BIN (data->pipeline), "appsrc" );
     if (!data->appsrc) {

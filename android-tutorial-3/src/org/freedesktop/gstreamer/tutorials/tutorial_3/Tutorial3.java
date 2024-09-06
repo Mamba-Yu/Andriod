@@ -183,6 +183,8 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
         analysis.setAnalyzer(Executors.newSingleThreadExecutor(), imageProxy -> {
             try {
+
+//                long startTime = System.nanoTime();
                 Matrix matrix = new Matrix();
                 matrix.postRotate(90);
                 Bitmap bitmap = imageProxy.toBitmap();
@@ -190,6 +192,10 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
                 // 将 Bitmap 转换为原始视频帧YUV字节流，以便 GStreamer 可以使用
                 byte[] imageData = bitmapToYUV(rotatedBitmap);
+//                long endTime = System.nanoTime();
+//                long duration = endTime - startTime;
+//                Log.e ("GStreamer", "camera to YUV time:" + duration / 1000000);
+
                 nativeAppsrcData(imageData);
 
             } catch (Exception e) {
@@ -201,6 +207,8 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
         // Bind the camera's lifecycle to the main activity
         processCameraProvider.bindToLifecycle(this, cameraSelector, preview, analysis);
     }
+
+
 
     private byte[] bitmapToYUV(Bitmap bitmap) {
         int width = bitmap.getWidth();

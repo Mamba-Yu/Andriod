@@ -128,17 +128,23 @@ error_cb (GstBus * bus, GstMessage * msg, CustomData * data)
   gst_element_set_state (data->pipeline, GST_STATE_NULL);
 }
 
-static GstPadProbeReturn probe_callback(GstPad *pad, GstPadProbeInfo *info, gpointer user_data) {
-    static gint64 last_time;
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    gint64 current_time = ts.tv_sec * 1000000000LL + ts.tv_nsec;
+typedef struct {
+    gint64 start_time;
+} CustomTimeData;
 
-    if (last_time != 0) {
-        g_print("Frame processing time 1: %ld ms\n", last_time);
-    }
-    last_time = current_time;
+GstPadProbeReturn
+src_probe_callback(GstPad *pad, GstPadProbeInfo *info, gpointer user_data) {
+    CustomTimeData *data = (CustomTimeData *) user_data;
+    data->start_time = g_get_monotonic_time();
+    return GST_PAD_PROBE_OK;
+}
 
+GstPadProbeReturn
+sink_probe_callback(GstPad *pad, GstPadProbeInfo *info, gpointer user_data) {
+    CustomTimeData *data = (CustomTimeData *) user_data;
+    gint64 end_time = g_get_monotonic_time();
+    gint64 processing_time = end_time - data->start_time;
+    g_print("Element processing time: %ld microseconds\n", processing_time);
     return GST_PAD_PROBE_OK;
 }
 
@@ -210,21 +216,19 @@ app_send_function (void *userdata)
 
   /* Build pipeline */
   data->pipeline =
-          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
-                            videoconvert ! x264enc ! queue ! h264parse ! avdec_h264 ! videoconvert ! autovideosink", &error);
+//          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
+//                            videoconvert ! x264enc ! queue ! h264parse ! avdec_h264 ! videoconvert ! autovideosink name=autovideosink", &error);
 
-//            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! "
-//                             "videoconvert ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! "
-//                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
+            gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! "
+                             "videoconvert ! x264enc tune=zerolatency ! rtph264pay name=x264enc config-interval=1 pt=96 ! "
+                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
 
 //      gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
 //            t.! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! autovideosink \
 //            t.! queue ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
 
 //      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! \
-//                        qtdemux ! h264parse ! tee name=t \
-//                        t.! queue ! avdec_h264! videoconvert ! autovideosink \
-//                        t.! queue ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004 ", &error);
+//                        qtdemux ! h264parse ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=127.0.0.1 port=50040 ", &error);
 
 //      gst_parse_launch("videotestsrc ! warptv ! videoconvert ! tee name=t \
 //            t.! queue ! autovideosink \
@@ -244,22 +248,31 @@ app_send_function (void *userdata)
   /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
   gst_element_set_state (data->pipeline, GST_STATE_READY);
 
-  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
-  if (!data->video_sink) {
-    GST_ERROR ("Could not retrieve video sink");
-    return NULL;
-  }
+//  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
+//  if (!data->video_sink) {
+//    GST_ERROR ("Could not retrieve video sink");
+//    return NULL;
+//  }
 
-    data->appsrc = gst_bin_get_by_name (GST_BIN (data->pipeline), "appsrc" );
+    data->appsrc = gst_bin_get_by_name(GST_BIN (data->pipeline), "appsrc" );
     if (!data->appsrc) {
         GST_ERROR ("Could not retrieve appsrc element");
         return NULL;
     }
 
-    // 在 src_pad 上安装 probe 回调
+
+    // 在 src pad 上添加 probe，记录帧进入时间
+//    CustomTimeData timeData = {0};
 //    GstPad *src_pad = gst_element_get_static_pad(data->appsrc, "src");
-//    gst_pad_add_probe(src_pad, GST_PAD_PROBE_TYPE_BUFFER, probe_callback, NULL, NULL);
+//    gst_pad_add_probe(src_pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback) src_probe_callback, &timeData, NULL);
 //    gst_object_unref(src_pad);
+//
+//    // 在 sink pad 上添加 probe，记录帧 离开时间并计算处理时间
+//    GstElement *udpSink = gst_bin_get_by_name(GST_BIN(data->pipeline), "x264enc");
+//    GstPad *sink_pad = gst_element_get_static_pad(udpSink, "sink");
+//    gst_pad_add_probe(sink_pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback) sink_probe_callback, &timeData, NULL);
+//    gst_object_unref(sink_pad);
+
 
   /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
   bus = gst_element_get_bus (data->pipeline);

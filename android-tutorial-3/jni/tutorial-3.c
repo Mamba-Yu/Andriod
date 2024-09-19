@@ -34,14 +34,14 @@ typedef struct _CustomData
   GMainContext *context;        /* GLib context used to run the main loop */
   GMainLoop *main_loop;         /* GLib main loop */
   gboolean initialized;         /* To avoid informing the UI multiple times about the initialization */
+  gboolean is_recv;
   GstElement *video_sink;       /* The video sink element which receives XOverlay commands */
   GstElement *appsrc;
   ANativeWindow *native_window; /* The Android native window where video will be rendered */
 } CustomData;
 
 /* These global variables cache values which are not changing during execution */
-static pthread_t gst_app_send_thread;
-static pthread_t gst_app_recv_thread;
+static pthread_t gst_app_thread;
 static pthread_key_t current_jni_env;
 static JavaVM *java_vm;
 static jfieldID custom_data_field_id;
@@ -189,24 +189,13 @@ check_initialization_complete (CustomData * data)
 
 /* Main method for the native code. This is executed on its own thread. */
 static void *
-app_send_function (void *userdata)
+app_function (void *userdata)
 {
   JavaVMAttachArgs args;
   GstBus *bus;
   CustomData *data = (CustomData *) userdata;
   GSource *bus_source;
   GError *error = NULL;
-
-    GstRegistry *registry;
-    GList *plugins, *l, *factories;
-    registry = gst_registry_get();
-    plugins = gst_registry_get_plugin_list(registry);
-
-    for (l = plugins; l; l = l->next) {
-        GstPlugin *plugin = GST_PLUGIN(l->data);
-        g_print("Plugin: %s\n", gst_plugin_get_name(plugin));
-    }
-    g_list_free(plugins);
 
   GST_DEBUG ("Creating pipeline in CustomData at %p", data);
 
@@ -215,26 +204,21 @@ app_send_function (void *userdata)
   g_main_context_push_thread_default (data->context);
 
   /* Build pipeline */
-  data->pipeline =
+
+  if (data->is_recv) {
+      // Recv Pipeline
+      data->pipeline = gst_parse_launch("udpsrc address=\"192.168.137.10\" port=50040 caps=\"application/x-rtp, media=video, encoding-name=H264, payload=96\" ! \
+                     rtpulpfecdec ! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! autovideosink", &error);
+  } else {
+      // Send Pipeline
+      data->pipeline =
 //          gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! \
 //                            videoconvert ! x264enc ! queue ! h264parse ! avdec_h264 ! videoconvert ! autovideosink name=autovideosink", &error);
 
             gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! "
-                             "videoconvert ! x264enc tune=zerolatency ! rtph264pay name=x264enc config-interval=1 pt=96 ! "
-                             "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=127.0.0.1 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
-
-//      gst_parse_launch("appsrc name=appsrc ! videoparse format=i420 width=480 height=640 framerate=30/1 ! videoconvert ! tee name=t \
-//            t.! queue max-size-buffers=2000 max-size-bytes=20485760 max-size-time=2000000000 ! autovideosink \
-//            t.! queue ! x264enc tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=172.24.16.106 port=5004", &error);
-
-//      gst_parse_launch("filesrc location=/data/data/org.freedesktop.gstreamer.tutorials.tutorial_3/files/video.mp4 ! \
-//                        qtdemux ! h264parse ! rtph264pay config-interval=1 pt=96 ! rtpulpfecenc ! udpsink host=127.0.0.1 port=50040 ", &error);
-
-//      gst_parse_launch("videotestsrc ! warptv ! videoconvert ! tee name=t \
-//            t.! queue ! autovideosink \
-//            t.! queue ! video/x-raw,format=I420 ! openh264enc usage-type=camera complexity=high ! \
-//              rtph264pay config-interval=1 pt=96 ssrc=32355 ! queue ! udpsink host=172.24.16.106 port=5004", &error);
-
+                    "videoconvert ! x264enc tune=zerolatency ! rtph264pay name=x264enc config-interval=1 pt=96 ! "
+                    "rtpulpfecenc percentage=10 percentage-important=10 ! udpsink host=192.168.137.10 port=50040 buffer-size=2048000 qos=true qos-dscp=46 ", &error);
+  }
   if (error) {
     gchar *message =
         g_strdup_printf ("Unable to build pipeline: %s", error->message);
@@ -248,18 +232,19 @@ app_send_function (void *userdata)
   /* Set the pipeline to READY, so it can already accept a window handle, if we have one */
   gst_element_set_state (data->pipeline, GST_STATE_READY);
 
-//  data->video_sink = gst_bin_get_by_interface (GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
-//  if (!data->video_sink) {
-//    GST_ERROR ("Could not retrieve video sink");
-//    return NULL;
-//  }
-
-    data->appsrc = gst_bin_get_by_name(GST_BIN (data->pipeline), "appsrc" );
-    if (!data->appsrc) {
-        GST_ERROR ("Could not retrieve appsrc element");
-        return NULL;
+    if (data->is_recv) {
+        data->video_sink = gst_bin_get_by_interface(GST_BIN (data->pipeline), GST_TYPE_VIDEO_OVERLAY);
+        if (!data->video_sink) {
+            GST_ERROR ("Could not retrieve video sink");
+            return NULL;
+        }
+    } else {
+        data->appsrc = gst_bin_get_by_name(GST_BIN (data->pipeline), "appsrc" );
+        if (!data->appsrc) {
+            GST_ERROR ("Could not retrieve appsrc element");
+            return NULL;
+        }
     }
-
 
     // 在 src pad 上添加 probe，记录帧进入时间
 //    CustomTimeData timeData = {0};
@@ -273,7 +258,6 @@ app_send_function (void *userdata)
 //    gst_pad_add_probe(sink_pad, GST_PAD_PROBE_TYPE_BUFFER, (GstPadProbeCallback) sink_probe_callback, &timeData, NULL);
 //    gst_object_unref(sink_pad);
 
-
   /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
   bus = gst_element_get_bus (data->pipeline);
   bus_source = gst_bus_create_watch (bus);
@@ -281,10 +265,8 @@ app_send_function (void *userdata)
       NULL, NULL);
   g_source_attach (bus_source, data->context);
   g_source_unref (bus_source);
-  g_signal_connect (G_OBJECT (bus), "message::error", (GCallback) error_cb,
-      data);
-  g_signal_connect (G_OBJECT (bus), "message::state-changed",
-      (GCallback) state_changed_cb, data);
+  g_signal_connect (G_OBJECT (bus), "message::error", (GCallback) error_cb, data);
+  g_signal_connect (G_OBJECT (bus), "message::state-changed", (GCallback) state_changed_cb, data);
   gst_object_unref (bus);
 
   /* Create a GLib Main Loop and set it to run */
@@ -313,20 +295,22 @@ app_send_function (void *userdata)
 
 /* Instruct the native code to create its internal data structure, pipeline and thread */
 static void
-gst_native_init (JNIEnv * env, jobject thiz)
+gst_native_init (JNIEnv * env, jobject thiz, jboolean is_recv)
 {
   CustomData *send_data = g_new0 (CustomData, 1);
   SET_CUSTOM_DATA (env, thiz, custom_data_field_id, send_data);
   GST_DEBUG_CATEGORY_INIT (debug_category, "tutorial-3", 0, "Android tutorial 3");
 
   gst_debug_set_threshold_for_name ("tutorial-3", GST_LEVEL_WARNING);
-//  gst_debug_set_default_threshold(GST_LEVEL_DEBUG);
+  gst_debug_set_default_threshold(GST_LEVEL_DEBUG);
 
   GST_DEBUG ("Created CustomData at %p", send_data);
   send_data->app = (*env)->NewGlobalRef (env, thiz);
   GST_DEBUG ("Created GlobalRef for app object at %p ", send_data->app);
 
-  pthread_create (&gst_app_send_thread, NULL, &app_send_function, send_data);
+  send_data->is_recv = is_recv;
+
+  pthread_create (&gst_app_thread, NULL, &app_function, send_data);
 }
 
 /* Quit the main loop, remove the native thread and free resources */
@@ -339,7 +323,7 @@ gst_native_finalize (JNIEnv * env, jobject thiz)
   GST_DEBUG ("Quitting main loop...");
   g_main_loop_quit (data->main_loop);
   GST_DEBUG ("Waiting for thread to finish...");
-  pthread_join (gst_app_send_thread, NULL);
+  pthread_join (gst_app_thread, NULL);
 
   GST_DEBUG ("Deleting GlobalRef for app object at %p", data->app);
   (*env)->DeleteGlobalRef (env, data->app);
@@ -475,7 +459,7 @@ gst_native_appsrc_data (JNIEnv * env, jobject thiz, jbyteArray imageData)
 
 /* List of implemented native methods */
 static JNINativeMethod native_methods[] = {
-  {"nativeInit", "()V", (void *) gst_native_init},
+  {"nativeInit", "(Z)V", (void *) gst_native_init},
   {"nativeFinalize", "()V", (void *) gst_native_finalize},
   {"nativePlay", "()V", (void *) gst_native_play},
   {"nativePause", "()V", (void *) gst_native_pause},

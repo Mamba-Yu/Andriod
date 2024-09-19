@@ -10,37 +10,33 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.ImageProxy;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import android.util.Size;
-import androidx.camera.core.*;
 import androidx.camera.lifecycle.ProcessCameraProvider;
-import com.google.common.util.concurrent.ListenableFuture;
 import androidx.camera.view.PreviewView;
 import android.graphics.Bitmap;
 
-import androidx.camera.core.AspectRatio;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.Preview;
 
-import java.io.ByteArrayOutputStream;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import org.freedesktop.gstreamer.GStreamer;
 
-import java.nio.ByteBuffer;
-
 public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callback {
-    private native void nativeInit();     // Initialize native code, build pipeline, etc
+    private boolean is_recv_client = false;
+
+    private native void nativeInit(boolean is_recv);     // Initialize native code, build pipeline, etc
     private native void nativeFinalize(); // Destroy pipeline and shutdown native code
     private native void nativePlay();     // Set pipeline to PLAYING
     private native void nativePause();    // Set pipeline to PAUSED
@@ -50,10 +46,7 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
     private native void nativeAppsrcData(byte[] imageData);
     private long native_custom_data;      // Native code will use this to keep private data
 
-    private boolean is_playing_desired;   // Whether the user asked to go to PLAYING
-
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
-    private static final int FILE_PERMISSION_REQUEST_CODE = 200;
 
     private Preview preview;
     private PreviewView previewView;
@@ -66,6 +59,10 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
     {
         super.onCreate(savedInstanceState);
 
+        if (!hasCameraPermission()) {
+            requestCameraPermission();
+        }
+
         // Initialize GStreamer and warn if it fails
         try {
             GStreamer.init(this);
@@ -77,55 +74,44 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
         setContentView(R.layout.main);
 
-        if (!hasCameraPermission()) {
-            requestCameraPermission();
-        }
-        // 获得读取文件权限
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, FILE_PERMISSION_REQUEST_CODE);
-        }
-
         previewView = findViewById(R.id.preview_view);
+
+        SurfaceView sv = (SurfaceView) this.findViewById(R.id.surface_video);
+        if (is_recv_client) {
+            sv.setVisibility(1);
+        }
+        SurfaceHolder sh = sv.getHolder();
+        sh.addCallback(this);
+
+        Button camera = (Button) this.findViewById(R.id.button_camera);
+        if (!is_recv_client) {
+            camera.setVisibility(1);
+        }
+        camera.setOnClickListener(new OnClickListener() {
+            public void onClick(View v) {
+                if (!is_recv_client) {
+                    previewView.setVisibility(1);
+                    startCamera();
+                    camera.setEnabled(false);
+                }
+            }
+        });
 
         ImageButton play = (ImageButton) this.findViewById(R.id.button_play);
         play.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
-                is_playing_desired = true;
                 nativePlay();
-                startCamera();
             }
         });
 
         ImageButton pause = (ImageButton) this.findViewById(R.id.button_stop);
         pause.setOnClickListener(new OnClickListener() {
             public void onClick(View v) {
-                is_playing_desired = false;
                 nativePause();
             }
         });
 
-        SurfaceView sv = (SurfaceView) this.findViewById(R.id.surface_video);
-        SurfaceHolder sh = sv.getHolder();
-        sh.addCallback(this);
-
-        if (savedInstanceState != null) {
-            is_playing_desired = savedInstanceState.getBoolean("playing");
-            Log.i ("GStreamer", "Activity created. Saved state is playing:" + is_playing_desired);
-        } else {
-            is_playing_desired = false;
-            Log.i ("GStreamer", "Activity created. There is no saved state, playing: false");
-        }
-
-        // Start with disabled buttons, until native code is initialized
-        this.findViewById(R.id.button_play).setEnabled(false);
-        this.findViewById(R.id.button_stop).setEnabled(false);
-
-        nativeInit();
-    }
-
-    protected void onSaveInstanceState (Bundle outState) {
-        Log.d ("GStreamer", "Saving state, playing:" + is_playing_desired);
-        outState.putBoolean("playing", is_playing_desired);
+        nativeInit(is_recv_client);
     }
 
     protected void onDestroy() {
@@ -139,19 +125,6 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
     private void requestCameraPermission() {
       ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-      super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-      if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
-        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-          // 权限已授予，执行相关操作
-        } else {
-          // 权限被拒绝，提示用户
-        }
-      }
     }
 
     private void startCamera() {
@@ -183,20 +156,23 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
 
         analysis.setAnalyzer(Executors.newSingleThreadExecutor(), imageProxy -> {
             try {
+//                ImageProxy.PlaneProxy[] planes = imageProxy.getPlanes();
+//                int ySize = planes[0].getBuffer().remaining(); // Y plane
+//                int uSize = planes[1].getBuffer().remaining(); // U plane
+//                int vSize = planes[2].getBuffer().remaining(); // V plane
+//
+//                byte[] yuvBytes = new byte[ySize + uSize + vSize];
+//                planes[0].getBuffer().get(yuvBytes, 0, ySize);
+//                planes[1].getBuffer().get(yuvBytes, ySize, uSize);
+//                planes[2].getBuffer().get(yuvBytes, ySize + uSize, vSize);
 
-//                long startTime = System.nanoTime();
                 Matrix matrix = new Matrix();
                 matrix.postRotate(90);
                 Bitmap bitmap = imageProxy.toBitmap();
                 Bitmap rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+                byte[] yuvBytes = bitmapToYUV(rotatedBitmap);
 
-                // 将 Bitmap 转换为原始视频帧YUV字节流，以便 GStreamer 可以使用
-                byte[] imageData = bitmapToYUV(rotatedBitmap);
-//                long endTime = System.nanoTime();
-//                long duration = endTime - startTime;
-//                Log.e ("GStreamer", "camera to YUV time:" + duration / 1000000);
-
-                nativeAppsrcData(imageData);
+                nativeAppsrcData(yuvBytes);
 
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -207,8 +183,6 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
         // Bind the camera's lifecycle to the main activity
         processCameraProvider.bindToLifecycle(this, cameraSelector, preview, analysis);
     }
-
-
 
     private byte[] bitmapToYUV(Bitmap bitmap) {
         int width = bitmap.getWidth();
@@ -259,13 +233,6 @@ public class Tutorial3 extends AppCompatActivity implements SurfaceHolder.Callba
     // Called from native code. Native code calls this once it has created its pipeline and
     // the main loop is running, so it is ready to accept commands.
     private void onGStreamerInitialized () {
-        Log.i ("GStreamer", "Gst initialized. Restoring state, playing:" + is_playing_desired);
-        // Restore previous playing state
-        if (is_playing_desired) {
-            nativePlay();
-        } else {
-            nativePause();
-        }
 
         // Re-enable buttons, now that GStreamer is initialized
         final Activity activity = this;
